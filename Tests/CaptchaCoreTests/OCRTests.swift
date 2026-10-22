@@ -30,6 +30,15 @@ struct OCRTests {
             }
         }
         #expect(files.count == 20)
-        #expect(solved >= 17, "Missed: \(misses)")
+        #expect(solved >= 18, "Missed: \(misses)")
+    }
+
+    /// Captured from a real login page by the app. The final 3 touches the right edge (the
+    /// capture used to be inset by 2pt) and strike lines cross the second T.
+    @Test func readsRealCaptchaOutright() throws {
+        let url = try #require(Bundle.module.url(forResource: "Fixtures/real/TT783", withExtension: "png"))
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(AnswerPicker.pick(readings: TextReader.readings(of: image).readings) == .single("TT783"))
     }
 }

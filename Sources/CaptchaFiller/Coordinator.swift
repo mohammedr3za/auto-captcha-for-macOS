@@ -17,6 +17,12 @@ final class Coordinator: ObservableObject {
     static let captureDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("CaptchaFiller", isDirectory: true)
 
+    /// `defaults write local.captchafiller OllamaModel <name>` picks another Ollama model, and
+    /// `KeepCase -bool true` types the model's own upper and lower case instead of capitals.
+    private let reader = OllamaReader(
+        model: UserDefaults.standard.string(forKey: "OllamaModel") ?? OllamaReader.defaultModel,
+        uppercasesReading: !UserDefaults.standard.bool(forKey: "KeepCase")
+    )
     private var hotKey: HotKey?
     private var isFilling = false
 
@@ -72,6 +78,10 @@ final class Coordinator: ObservableObject {
         }
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
 
+        // Load the model while the page is searched, so it's ready when the image is.
+        let reader = self.reader
+        Task.detached { await reader.warmUp() }
+
         var target: CaptchaTarget?
         var field: AXUIElement?
         if !selectingArea, let id = app.bundleIdentifier, SafariSnapshot.bundleIDs.contains(id) {
@@ -102,26 +112,37 @@ final class Coordinator: ObservableObject {
 
         let image: CGImage
         do {
-            // The inset drops the border many sites draw around the image, which OCR reads as I or l.
-            image = try await SCScreenshotManager.captureImage(in: region.insetBy(dx: 2, dy: 2))
+            // No inset: CAPTCHAs are often drawn to the image's edge, and an inset cut off the last
+            // character. Borders caught in a dragged box are thin lines that cleanup erases.
+            image = try await SCScreenshotManager.captureImage(in: region)
         } catch {
             app.activate()
             report("Screen capture failed: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
             return
         }
 
-        let ocr = await Task.detached(operation: { TextReader.readings(of: image) }).value
-        saveCapture(image, cleaned: ocr.cleaned)
+        Toast.show("Reading the CAPTCHA…", symbol: "hourglass")
+        let answer: Answer
+        var note = ""
+        if let reading = try? await reader.read(image) {
+            saveCapture(image, cleaned: nil)
+            answer = AnswerPicker.pick(readings: [reading])
+        } else {
+            let ocr = await Task.detached(operation: { TextReader.readings(of: image) }).value
+            saveCapture(image, cleaned: ocr.cleaned)
+            answer = AnswerPicker.pick(readings: ocr.readings)
+            note = " with Apple OCR (Ollama isn't running)"
+        }
 
-        switch AnswerPicker.pick(readings: ocr.readings) {
+        switch answer {
         case .none:
             app.activate()
-            report("Couldn't read the CAPTCHA", symbol: "questionmark.circle")
-        case .single(let answer):
-            await deliver(answer, to: field, in: app)
+            report("Couldn't read the CAPTCHA\(note)", symbol: "questionmark.circle")
+        case .single(let text):
+            await deliver(text, to: field, in: app, note: note)
         case .choice(let options):
-            if let answer = await ChoicePanel.choose(from: options, image: image, below: region) {
-                await deliver(answer, to: field, in: app)
+            if let text = await ChoicePanel.choose(from: options, image: image, below: region) {
+                await deliver(text, to: field, in: app, note: note)
             } else {
                 app.activate()
                 report("Cancelled", symbol: "xmark.circle")
@@ -130,12 +151,12 @@ final class Coordinator: ObservableObject {
     }
 
     /// Types into the detected field, else into whatever field has focus, else copies the answer.
-    private func deliver(_ answer: String, to field: AXUIElement?, in app: NSRunningApplication) async {
+    private func deliver(_ answer: String, to field: AXUIElement?, in app: NSRunningApplication, note: String = "") async {
         if let field {
             await Typist.fill(field, with: answer, in: app)
-            report("Typed \(answer)", symbol: "checkmark.circle")
+            report("Typed \(answer)\(note)", symbol: "checkmark.circle")
         } else if await Typist.fillFocusedField(with: answer, in: app) {
-            report("Typed \(answer)", symbol: "checkmark.circle")
+            report("Typed \(answer)\(note)", symbol: "checkmark.circle")
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(answer, forType: .string)
@@ -153,9 +174,13 @@ final class Coordinator: ObservableObject {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let files: [(String, CGImage?)] = [("last-capture.png", image), ("last-capture-cleaned.png", cleaned)]
         for (name, picture) in files {
-            let url = directory.appendingPathComponent(name) as CFURL
-            guard let picture,
-                  let destination = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil)
+            let url = directory.appendingPathComponent(name)
+            guard let picture else {
+                // Don't leave a cleaned image from an earlier capture next to this one.
+                try? FileManager.default.removeItem(at: url)
+                continue
+            }
+            guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
             else { continue }
             CGImageDestinationAddImage(destination, picture, nil)
             CGImageDestinationFinalize(destination)

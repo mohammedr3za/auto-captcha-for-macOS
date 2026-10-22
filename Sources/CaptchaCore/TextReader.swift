@@ -4,13 +4,17 @@ import Vision
 public enum TextReader {
     private static let context = CIContext()
 
-    /// OCR of the CAPTCHA as captured, then after `ImageCleaner`, plus the cleaned image.
-    /// Each reading gets right some CAPTCHAs the other misreads, and Vision's confidence is no
-    /// help (it reports 1.0 on misreads too), so `AnswerPicker` compares them instead.
+    /// OCR of the CAPTCHA after `ImageCleaner` (the more accurate reading, so first), then as
+    /// captured, plus the cleaned image. Each reading gets right some CAPTCHAs the other
+    /// misreads, and Vision's confidence is no help (it reports 1.0 on misreads too), so
+    /// `AnswerPicker` compares them instead.
     public static func readings(of image: CGImage) -> (readings: [String], cleaned: CGImage?) {
-        let cleanedImage = ImageCleaner.clean(CIImage(cgImage: image))
+        let source = CIImage(cgImage: image)
+        let cleanedImage = ImageCleaner.clean(source)
         let cleaned = context.createCGImage(cleanedImage, from: cleanedImage.extent)
-        return ([read(image)] + (cleaned.map { [read($0)] } ?? []), cleaned)
+        let marginImage = ImageCleaner.withMargin(source, 20)
+        let raw = context.createCGImage(marginImage, from: marginImage.extent).map(read) ?? ""
+        return ((cleaned.map { [read($0)] } ?? []) + [raw], cleaned)
     }
 
     /// Recognized text with lines joined left to right; "" when nothing was found.

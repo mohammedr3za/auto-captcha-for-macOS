@@ -3,14 +3,22 @@
 A macOS menu bar app that fills in text CAPTCHAs. Press **⌃⌥C** on a page with a
 CAPTCHA and it types the answer into the CAPTCHA box. It never presses Enter.
 
-Everything runs on your Mac: Apple's Vision framework reads the text, and nothing is sent anywhere.
+Everything runs on your Mac and nothing is sent anywhere. A vision-language model,
+`qwen3.5:4b` running in [Ollama](https://ollama.com), reads the CAPTCHA. It read 40 of 42 test
+CAPTCHAs, including real ones that Apple's OCR got wrong.
 
 ## What it handles
 
-- **Distorted-text CAPTCHAs.** It reads the image twice, once as captured and once after
-  stripping thin strike lines and speckles. If the two readings agree, it types the answer.
-  If they don't, a small panel shows the CAPTCHA and both readings; press 1 or 2 to pick.
+- **Distorted-text CAPTCHAs.** The model's reading is typed straight in.
 - **Arithmetic questions** like "What is 7 + 3?", in page text or in an image.
+
+It needs Ollama running with the model pulled (`ollama pull qwen3.5:4b`). To use a different
+model: `defaults write local.captchafiller OllamaModel <name>`. Answers are typed in capitals,
+because the model reads upper and lower case poorly and most CAPTCHAs ignore case. For a site
+that checks case: `defaults write local.captchafiller KeepCase -bool true`. When Ollama isn't running, it
+falls back to Apple's Vision OCR, which is less accurate. That reads the image twice, once as
+captured and once with the strike lines removed. When the two readings differ, a panel shows
+the CAPTCHA and both readings, and you press 1 or 2 to pick.
 
 It finds the CAPTCHA automatically in **Safari**. In other apps, or when it can't find one,
 a crosshair appears: drag a box around the CAPTCHA and it types into whichever box you have
