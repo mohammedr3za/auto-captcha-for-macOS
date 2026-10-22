@@ -1,0 +1,6 @@
+body { font: 15px -apple-system, sans-serif; max-width: 520px; margin: 40px auto; padding: 0 16px; color: #222; }
+form { border: 1px solid #ddd; border-radius: 10px; padding: 4px 20px 20px; }
+label { display: block; margin: 16px 0 4px; }
+input { font: inherit; padding: 6px 8px; width: 240px; }
+img { display: block; border: 1px solid #ccc; border-radius: 6px; margin-top: 16px; }
+details { margin-top: 16px; color: #777; font-size: 13px; }

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Captcha Filler test: image</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Image CAPTCHA</h1>
+<p>Press ⌃⌥C. The CAPTCHA box should fill in; the email box should stay empty.
+   <a href="math.html">Math question test →</a></p>
+<form onsubmit="return false">
+  <label for="email">Email</label>
+  <input id="email" type="email">
+  <img src="captcha.png" alt="" width="230" height="70">
+  <label for="code">Enter the characters shown above</label>
+  <input id="code" autocomplete="off">
+  <details><summary>Expected answer</summary>ZSUQB</details>
+</form>
+</body>
+</html>
