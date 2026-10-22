@@ -13,6 +13,8 @@ final class Coordinator: ObservableObject {
     @Published private(set) var hasAccessibility = Permissions.accessibility
     @Published private(set) var hasScreenRecording = Permissions.screenRecording
     @Published private(set) var launchesAtLogin = SMAppService.mainApp.status == .enabled
+    /// Off frees the model's memory (about 5 GB) and leaves reading to Apple's OCR.
+    @Published private(set) var usesModel = UserDefaults.standard.object(forKey: "UseModel") as? Bool ?? true
 
     /// The last captured CAPTCHA and its cleaned-up version, for checking misreads.
     static let captureDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -35,9 +37,9 @@ final class Coordinator: ObservableObject {
         if hotKey == nil { status = "⌃⌥C is taken by another app; use the menu" }
         // Keep the model loaded while the app runs: loading it takes about 3s.
         let reader = self.reader
-        Task.detached { await reader.warmUp() }
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            reader.unload()
+        if usesModel { Task.detached { await reader.warmUp() } }
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            if MainActor.assumeIsolated({ self?.usesModel ?? false }) { reader.unload() }
         }
         // Grants happen in System Settings, so poll to keep the menu current.
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -61,6 +63,17 @@ final class Coordinator: ObservableObject {
             report("Couldn't change Launch at Login: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
         }
         launchesAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    func setUsesModel(_ enabled: Bool) {
+        usesModel = enabled
+        UserDefaults.standard.set(enabled, forKey: "UseModel")
+        let reader = self.reader
+        if enabled {
+            Task.detached { await reader.warmUp() }
+        } else {
+            Task.detached { reader.unload() }
+        }
     }
 
     func showLastCapture() {
@@ -90,7 +103,7 @@ final class Coordinator: ObservableObject {
 
         // In case Ollama restarted or dropped the model, reload it while the page is searched.
         let reader = self.reader
-        Task.detached { await reader.warmUp() }
+        if usesModel { Task.detached { await reader.warmUp() } }
 
         var target: CaptchaTarget?
         var field: AXUIElement?
@@ -136,16 +149,18 @@ final class Coordinator: ObservableObject {
 
         // `defaults write local.captchafiller AlwaysUseModel -bool true` skips the OCR fast path;
         // `KeepCase -bool true` types the reading's own case instead of capitals.
+        var model: (@Sendable (CGImage) async throws -> String)?
+        if usesModel { model = { try await reader.read($0) } }
         let result = await CaptchaSolver.solve(
             image,
-            model: { try await reader.read($0) },
+            model: model,
             trustAgreeingOCR: !UserDefaults.standard.bool(forKey: "AlwaysUseModel"),
             uppercased: !UserDefaults.standard.bool(forKey: "KeepCase"),
             willWaitForModel: { Toast.show("Reading the CAPTCHA…", symbol: "hourglass") }
         )
         mark("read (\(result.source))")
         saveCapture(image, cleaned: result.cleaned)
-        let note = result.source == .ocrFallback ? " with Apple OCR (Ollama isn't running)" : ""
+        let note = usesModel && result.source == .ocrFallback ? " with Apple OCR (Ollama isn't running)" : ""
 
         switch result.answer {
         case .none:

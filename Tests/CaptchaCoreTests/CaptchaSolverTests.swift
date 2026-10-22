@@ -34,6 +34,18 @@ struct CaptchaSolverTests {
         #expect(result.source == .model)
     }
 
+    @Test func withoutAModelAgreeingOCRIsTyped() async throws {
+        let result = await CaptchaSolver.solve(try fixture("01_DHDAT"), model: nil, trustAgreeingOCR: false)
+        #expect(result.answer == .single("DHDAT"))
+        #expect(result.source == .ocr)
+    }
+
+    @Test func withoutAModelDisagreeingOCRIsOffered() async throws {
+        let result = await CaptchaSolver.solve(try fixture("real/LO4J5"), model: nil)
+        #expect(result.source == .ocrFallback)
+        #expect(result.answer == .choice(["L0415", "L045"]))
+    }
+
     @Test func failingModelFallsBackToOCRReadings() async throws {
         struct OllamaDown: Error {}
         let result = await CaptchaSolver.solve(try fixture("real/LO4J5"), model: { _ in throw OllamaDown() })

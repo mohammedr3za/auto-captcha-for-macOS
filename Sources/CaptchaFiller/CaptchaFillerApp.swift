@@ -38,6 +38,10 @@ private struct MenuContent: View {
             Button("Relaunch to Apply Permissions") { Permissions.relaunch() }
         }
         Divider()
+        Toggle("Use Qwen Model (about 5 GB of memory)", isOn: Binding(
+            get: { coordinator.usesModel },
+            set: { coordinator.setUsesModel($0) }
+        ))
         Toggle("Launch at Login", isOn: Binding(
             get: { coordinator.launchesAtLogin },
             set: { coordinator.setLaunchesAtLogin($0) }

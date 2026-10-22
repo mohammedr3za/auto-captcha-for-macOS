@@ -18,7 +18,8 @@ CAPTCHAs, including real ones that Apple's OCR got wrong.
 
 It needs Ollama running with the model pulled (`ollama pull qwen3.5:4b`). The model is kept in
 memory (about 5 GB) while Captcha Filler runs, because loading it takes about 3 seconds; quitting
-Captcha Filler unloads it. When Ollama isn't running, it uses only Apple's OCR. When the two
+Captcha Filler unloads it. To free that memory, turn off **Use Qwen Model** in the menu. With the
+model off, or Ollama not running, only Apple's OCR is used. When the two
 readings differ, a panel shows the CAPTCHA and both readings, and you press 1 or 2 to pick.
 
 Settings, changed with `defaults write local.captchafiller <key> <value>`:

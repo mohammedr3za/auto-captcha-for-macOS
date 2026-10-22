@@ -9,7 +9,8 @@ public enum CaptchaSolver {
         /// Vision OCR's two readings agreed.
         case ocr
         case model
-        /// The model failed (usually because Ollama isn't running), so OCR's readings are used as-is.
+        /// There was no model, or it failed (usually because Ollama isn't running), so OCR's
+        /// readings are used as-is.
         case ocrFallback
     }
 
@@ -21,18 +22,19 @@ public enum CaptchaSolver {
     }
 
     /// - Parameters:
-    ///   - model: reads the image with the model. Started at once, and cancelled if OCR settles it.
-    ///   - trustAgreeingOCR: false always waits for the model.
+    ///   - model: reads the image with the model, or nil to use OCR alone. Started at once, and
+    ///     cancelled if OCR settles it.
+    ///   - trustAgreeingOCR: false always waits for the model, when there is one.
     ///   - uppercased: type answers in capitals; the model reads case poorly and most CAPTCHAs ignore it.
     ///   - willWaitForModel: called when OCR didn't settle it, before waiting on the model.
     public static func solve(
         _ image: CGImage,
-        model: @escaping @Sendable (CGImage) async throws -> String,
+        model: (@Sendable (CGImage) async throws -> String)?,
         trustAgreeingOCR: Bool = true,
         uppercased: Bool = true,
         willWaitForModel: @MainActor () -> Void = {}
     ) async -> Result {
-        let modelTask = Task { try await model(image) }
+        let modelTask = model.map { read in Task { try await read(image) } }
         let ocr = await Task.detached { TextReader.readings(of: image) }.value
         let ocrAnswer = AnswerPicker.pick(readings: ocr.readings)
         let ocrAgrees = ocr.readings.count >= 2
@@ -40,16 +42,18 @@ public enum CaptchaSolver {
             && { if case .single = ocrAnswer { true } else { false } }()
 
         var result: Result
-        if trustAgreeingOCR && ocrAgrees {
-            modelTask.cancel()
+        if ocrAgrees && (trustAgreeingOCR || modelTask == nil) {
+            modelTask?.cancel()
             result = Result(answer: ocrAnswer, source: .ocr, cleaned: ocr.cleaned)
-        } else {
+        } else if let modelTask {
             await willWaitForModel()
             if let reading = try? await modelTask.value {
                 result = Result(answer: AnswerPicker.pick(readings: [reading]), source: .model, cleaned: ocr.cleaned)
             } else {
                 result = Result(answer: ocrAnswer, source: .ocrFallback, cleaned: ocr.cleaned)
             }
+        } else {
+            result = Result(answer: ocrAnswer, source: .ocrFallback, cleaned: ocr.cleaned)
         }
         if uppercased { result.answer = result.answer.uppercased() }
         return result
