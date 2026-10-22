@@ -9,16 +9,27 @@ CAPTCHAs, including real ones that Apple's OCR got wrong.
 
 ## What it handles
 
-- **Distorted-text CAPTCHAs.** The model's reading is typed straight in.
+- **Distorted-text CAPTCHAs.** Apple's Vision OCR reads the image twice, once as captured and
+  once with the strike lines removed, which takes well under a second. When the two readings
+  agree, the answer is typed at once. That happened on 28 of 42 test CAPTCHAs, and was wrong
+  only once. Otherwise it uses the model's reading, which was started at the same time and
+  takes about 1.4 seconds.
 - **Arithmetic questions** like "What is 7 + 3?", in page text or in an image.
 
-It needs Ollama running with the model pulled (`ollama pull qwen3.5:4b`). To use a different
-model: `defaults write local.captchafiller OllamaModel <name>`. Answers are typed in capitals,
-because the model reads upper and lower case poorly and most CAPTCHAs ignore case. For a site
-that checks case: `defaults write local.captchafiller KeepCase -bool true`. When Ollama isn't running, it
-falls back to Apple's Vision OCR, which is less accurate. That reads the image twice, once as
-captured and once with the strike lines removed. When the two readings differ, a panel shows
-the CAPTCHA and both readings, and you press 1 or 2 to pick.
+It needs Ollama running with the model pulled (`ollama pull qwen3.5:4b`). The model is kept in
+memory (about 5 GB) while Captcha Filler runs, because loading it takes about 3 seconds; quitting
+Captcha Filler unloads it. When Ollama isn't running, it uses only Apple's OCR. When the two
+readings differ, a panel shows the CAPTCHA and both readings, and you press 1 or 2 to pick.
+
+Settings, changed with `defaults write local.captchafiller <key> <value>`:
+
+- `OllamaModel <name>`: use a different Ollama model.
+- `AlwaysUseModel -bool true`: always wait for the model, skipping the OCR fast path.
+- `KeepCase -bool true`: type the reading's own case. By default answers are typed in capitals,
+  because the model reads upper and lower case poorly and most CAPTCHAs ignore case.
+
+The toast shows how long each fill took. For a per-step breakdown, run
+`log stream --predicate 'subsystem == "local.captchafiller"'`.
 
 It finds the CAPTCHA automatically in **Safari**. In other apps, or when it can't find one,
 a crosshair appears: drag a box around the CAPTCHA and it types into whichever box you have
