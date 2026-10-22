@@ -23,8 +23,9 @@ scripts/build-app.sh --install     # builds, copies to ~/Applications, launches
 ```
 
 On first use, grant **Accessibility** and **Screen Recording** from the menu bar icon, then
-choose **Relaunch to Apply Permissions**. With the default ad-hoc signature, macOS asks for both
-grants again after every rebuild; see the note in `scripts/build-app.sh` to avoid that.
+choose **Relaunch to Apply Permissions**. With the default ad-hoc signature, the grants don't
+carry over to a rebuilt app, so `--install` clears them and you grant both again; see the note in
+`scripts/build-app.sh` to sign with a certificate instead.
 
 ## Try it
 
