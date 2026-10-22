@@ -10,18 +10,10 @@ public struct OllamaReader: Sendable {
 
     public var model: String
     public var endpoint: URL
-    /// Uppercase the reading. The model gets the characters right far more often than their case
-    /// (case was right on only 23 of the 42), and most CAPTCHAs ignore case.
-    public var uppercasesReading: Bool
 
-    public init(
-        model: String = defaultModel,
-        endpoint: URL = URL(string: "http://localhost:11434")!,
-        uppercasesReading: Bool = true
-    ) {
+    public init(model: String = defaultModel, endpoint: URL = URL(string: "http://localhost:11434")!) {
         self.model = model
         self.endpoint = endpoint
-        self.uppercasesReading = uppercasesReading
     }
 
     /// Asks for a transcription rather than an answer, so `MathSolver` does any arithmetic.
@@ -36,13 +28,26 @@ public struct OllamaReader: Sendable {
         case badResponse
     }
 
-    /// Loads the model into memory so `read` doesn't wait for it. Errors are left for `read` to report.
+    /// Loads the model and keeps it in memory until `unload()`, so reads skip the ~3s load.
+    /// Errors are left for `read` to report.
     public func warmUp() async {
-        _ = try? await generate(["model": model, "stream": false], timeout: 60)
+        _ = try? await generate(["model": model, "stream": false, "keep_alive": -1], timeout: 60)
     }
 
-    /// The model's transcription. Throws when Ollama isn't running, doesn't have the model, or
-    /// replies with something that can't be a CAPTCHA answer.
+    /// Frees the model's memory (about 4 GB for qwen3.5:4b). Blocks for up to a second, for use
+    /// while quitting.
+    public func unload() {
+        guard let request = try? request(["model": model, "stream": false, "keep_alive": 0], timeout: 1) else {
+            return
+        }
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
+        _ = done.wait(timeout: .now() + 1)
+    }
+
+    /// The model's transcription, in whatever case the model chose (it reads case poorly).
+    /// Throws when Ollama isn't running, doesn't have the model, or replies with something that
+    /// can't be a CAPTCHA answer.
     public func read(_ image: CGImage) async throws -> String {
         guard let png = Self.png(image) else { throw Failure.badImage }
         let reply = try await generate([
@@ -51,18 +56,23 @@ public struct OllamaReader: Sendable {
             "images": [png.base64EncodedString()],
             "stream": false,
             "think": false,
-            "options": ["temperature": 0],
+            "keep_alive": -1,
+            "options": ["temperature": 0, "num_predict": 16],
         ], timeout: 30)
         guard (1...24).contains(reply.count) else { throw Failure.badResponse }
-        return uppercasesReading ? reply.uppercased() : reply
+        return reply
     }
 
-    private func generate(_ body: [String: Any], timeout: TimeInterval) async throws -> String {
+    private func request(_ body: [String: Any], timeout: TimeInterval) throws -> URLRequest {
         var request = URLRequest(url: endpoint.appendingPathComponent("api/generate"), timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        return request
+    }
+
+    private func generate(_ body: [String: Any], timeout: TimeInterval) async throws -> String {
+        let (data, response) = try await URLSession.shared.data(for: request(body, timeout: timeout))
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let text = json["response"] as? String

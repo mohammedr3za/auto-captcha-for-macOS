@@ -7,6 +7,16 @@ public enum Answer: Equatable {
     case none
 }
 
+extension Answer {
+    func uppercased() -> Answer {
+        switch self {
+        case .single(let text): .single(text.uppercased())
+        case .choice(let options): .choice(options.map { $0.uppercased() })
+        case .none: .none
+        }
+    }
+}
+
 public enum AnswerPicker {
     /// Combines several OCR readings of one CAPTCHA, most trusted first. Arithmetic is solved,
     /// readings that agree (ignoring case) collapse into one, and disagreements go to the user.

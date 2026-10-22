@@ -2,6 +2,7 @@ import AppKit
 import CaptchaCore
 import Carbon.HIToolbox
 import ImageIO
+import os
 import ScreenCaptureKit
 import ServiceManagement
 
@@ -17,20 +18,27 @@ final class Coordinator: ObservableObject {
     static let captureDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("CaptchaFiller", isDirectory: true)
 
-    /// `defaults write local.captchafiller OllamaModel <name>` picks another Ollama model, and
-    /// `KeepCase -bool true` types the model's own upper and lower case instead of capitals.
+    /// `defaults write local.captchafiller OllamaModel <name>` picks another Ollama model.
     private let reader = OllamaReader(
-        model: UserDefaults.standard.string(forKey: "OllamaModel") ?? OllamaReader.defaultModel,
-        uppercasesReading: !UserDefaults.standard.bool(forKey: "KeepCase")
+        model: UserDefaults.standard.string(forKey: "OllamaModel") ?? OllamaReader.defaultModel
     )
+    private let log = Logger(subsystem: "local.captchafiller", category: "fill")
     private var hotKey: HotKey?
     private var isFilling = false
+    private var fillStarted = Date()
+    private var lastMark = Date()
 
     init() {
         hotKey = HotKey(keyCode: kVK_ANSI_C, modifiers: controlKey | optionKey) { [weak self] in
             Task { await self?.fill() }
         }
         if hotKey == nil { status = "⌃⌥C is taken by another app; use the menu" }
+        // Keep the model loaded while the app runs: loading it takes about 3s.
+        let reader = self.reader
+        Task.detached { await reader.warmUp() }
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            reader.unload()
+        }
         // Grants happen in System Settings, so poll to keep the menu current.
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshPermissions() }
@@ -64,6 +72,8 @@ final class Coordinator: ObservableObject {
         guard !isFilling else { return }
         isFilling = true
         defer { isFilling = false }
+        fillStarted = Date()
+        lastMark = fillStarted
 
         refreshPermissions()
         guard hasAccessibility else {
@@ -78,7 +88,7 @@ final class Coordinator: ObservableObject {
         }
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
 
-        // Load the model while the page is searched, so it's ready when the image is.
+        // In case Ollama restarted or dropped the model, reload it while the page is searched.
         let reader = self.reader
         Task.detached { await reader.warmUp() }
 
@@ -92,6 +102,7 @@ final class Coordinator: ObservableObject {
                 field = snapshot.elements[found.fieldIndex]
             }
         }
+        mark("locate")
 
         if let question = target?.question, let value = MathSolver.solve(question, allowFiller: true) {
             await deliver(String(value), to: field, in: app)
@@ -121,20 +132,22 @@ final class Coordinator: ObservableObject {
             return
         }
 
-        Toast.show("Reading the CAPTCHA…", symbol: "hourglass")
-        let answer: Answer
-        var note = ""
-        if let reading = try? await reader.read(image) {
-            saveCapture(image, cleaned: nil)
-            answer = AnswerPicker.pick(readings: [reading])
-        } else {
-            let ocr = await Task.detached(operation: { TextReader.readings(of: image) }).value
-            saveCapture(image, cleaned: ocr.cleaned)
-            answer = AnswerPicker.pick(readings: ocr.readings)
-            note = " with Apple OCR (Ollama isn't running)"
-        }
+        mark("capture")
 
-        switch answer {
+        // `defaults write local.captchafiller AlwaysUseModel -bool true` skips the OCR fast path;
+        // `KeepCase -bool true` types the reading's own case instead of capitals.
+        let result = await CaptchaSolver.solve(
+            image,
+            model: { try await reader.read($0) },
+            trustAgreeingOCR: !UserDefaults.standard.bool(forKey: "AlwaysUseModel"),
+            uppercased: !UserDefaults.standard.bool(forKey: "KeepCase"),
+            willWaitForModel: { Toast.show("Reading the CAPTCHA…", symbol: "hourglass") }
+        )
+        mark("read (\(result.source))")
+        saveCapture(image, cleaned: result.cleaned)
+        let note = result.source == .ocrFallback ? " with Apple OCR (Ollama isn't running)" : ""
+
+        switch result.answer {
         case .none:
             app.activate()
             report("Couldn't read the CAPTCHA\(note)", symbol: "questionmark.circle")
@@ -152,16 +165,28 @@ final class Coordinator: ObservableObject {
 
     /// Types into the detected field, else into whatever field has focus, else copies the answer.
     private func deliver(_ answer: String, to field: AXUIElement?, in app: NSRunningApplication, note: String = "") async {
+        defer { mark("type (total \(elapsed))") }
         if let field {
             await Typist.fill(field, with: answer, in: app)
-            report("Typed \(answer)\(note)", symbol: "checkmark.circle")
+            report("Typed \(answer)\(note) in \(elapsed)", symbol: "checkmark.circle")
         } else if await Typist.fillFocusedField(with: answer, in: app) {
-            report("Typed \(answer)\(note)", symbol: "checkmark.circle")
+            report("Typed \(answer)\(note) in \(elapsed)", symbol: "checkmark.circle")
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(answer, forType: .string)
             report("Copied \(answer): click the box and press ⌘V", symbol: "doc.on.clipboard")
         }
+    }
+
+    private var elapsed: String { String(format: "%.1fs", Date().timeIntervalSince(fillStarted)) }
+
+    /// Logs how long the stage since the previous mark took. To watch:
+    /// `log stream --predicate 'subsystem == "local.captchafiller"'`
+    private func mark(_ stage: String) {
+        let now = Date()
+        let ms = Int(now.timeIntervalSince(lastMark) * 1000)
+        log.notice("\(stage, privacy: .public): \(ms)ms")
+        lastMark = now
     }
 
     private func report(_ message: String, symbol: String) {

@@ -9,13 +9,14 @@ private let ollamaIsRunning = (try? Data(contentsOf: URL(string: "http://localho
 @Suite(.enabled(if: ollamaIsRunning, "Ollama isn't running on localhost:11434"))
 struct OllamaReaderTests {
     /// Real CAPTCHAs from a login page, both misread by Vision OCR. In LO4J5's font the letter
-    /// O and the digit 0 look alike, so either is accepted.
+    /// O and the digit 0 look alike, so either is accepted. Case is compared in capitals, as
+    /// `CaptchaSolver` types it, because the model reads case poorly.
     @Test(arguments: [("TT783", ["TT783"]), ("LO4J5", ["LO4J5", "L04J5"])])
     func readsRealCaptchas(name: String, accepted: [String]) async throws {
         let url = try #require(Bundle.module.url(forResource: "Fixtures/real/\(name)", withExtension: "png"))
         let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
         let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-        let answer = AnswerPicker.pick(readings: [try await OllamaReader().read(image)])
+        let answer = AnswerPicker.pick(readings: [try await OllamaReader().read(image).uppercased()])
         #expect(accepted.map(Answer.single).contains(answer))
     }
 }

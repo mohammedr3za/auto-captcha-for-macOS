@@ -8,7 +8,7 @@ enum Typist {
     static func fill(_ field: AXUIElement, with text: String, in app: NSRunningApplication) async {
         await bringForward(app)
         AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        try? await Task.sleep(for: .milliseconds(80))
+        try? await Task.sleep(for: .milliseconds(40))
         selectContents(of: field)
         await type(text)
     }
@@ -68,7 +68,7 @@ enum Typist {
                 event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &character)
                 event.post(tap: .cghidEventTap)
             }
-            try? await Task.sleep(for: .milliseconds(8))
+            try? await Task.sleep(for: .milliseconds(4))
         }
     }
 }
