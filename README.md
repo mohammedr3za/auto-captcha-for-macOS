@@ -76,3 +76,7 @@ swift test -Xswiftc -F -Xswiftc $F -Xlinker -F -Xlinker $F -Xlinker -rpath -Xlin
   page (`CaptchaLocator`).
 - `Sources/CaptchaFiller` is the app: the hotkey, reading Safari's accessibility tree
   (`SafariSnapshot`), typing (`Typist`), and the overlay and panels.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
