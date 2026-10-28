@@ -2,7 +2,7 @@
 <p align="center">A macOS menu-bar app that fills text CAPTCHAs with one hotkey.</p>
 
 <p align="center">
-  <img alt="Swift" src="https://img.shields.io/badge/swift-5.9%2B-F05138">
+  <img alt="Swift" src="https://img.shields.io/badge/swift-6.0%2B-F05138">
   <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-CC785C">
   <img alt="On-device" src="https://img.shields.io/badge/inference-on--device-879A77">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-CC785C">
