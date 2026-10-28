@@ -1,11 +1,16 @@
-# Captcha Filler
+<h1 align="center">Captcha Filler</h1>
+<p align="center">A macOS menu-bar app that fills text CAPTCHAs with one hotkey.</p>
 
-A macOS menu bar app that fills in text CAPTCHAs. Press **⌃⌥C** on a page with a
-CAPTCHA and it types the answer into the CAPTCHA box. It never presses Enter.
+<p align="center">
+  <img alt="Swift" src="https://img.shields.io/badge/swift-5.9%2B-F05138">
+  <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-CC785C">
+  <img alt="On-device" src="https://img.shields.io/badge/inference-on--device-879A77">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-CC785C">
+</p>
 
-Everything runs on your Mac and nothing is sent anywhere. A vision-language model,
-`qwen3.5:4b` running in [Ollama](https://ollama.com), reads the CAPTCHA. It read 40 of 42 test
-CAPTCHAs, including real ones that Apple's OCR got wrong.
+Press **⌃⌥C** on a page with a CAPTCHA and it types the answer into the box.
+Everything runs on your Mac: Apple Vision OCR plus a local `qwen3.5:4b` model in
+[Ollama](https://ollama.com). Nothing is sent anywhere.
 
 ## What it handles
 
